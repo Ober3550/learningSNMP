@@ -251,6 +251,34 @@ namespace
             writeTLV(Asn1Tag::Integer, bytes);
         }
 
+        void writeOctetString(const std::string &str)
+        {
+            writeByte(static_cast<uint8_t>(Asn1Tag::OctetString));
+            writeLength(str.size());
+            writeBytes(reinterpret_cast<const uint8_t *>(str.data()), str.size());
+        }
+
+        bool writeOid(const std::string &oidStr)
+        {
+            std::vector<uint64_t> subIds;
+            std::istringstream iss(oidStr);
+            std::string token;
+
+            // Extract string delimeted by '.'
+            while (std::getline(iss, token, '.'))
+            {
+                if (token.empty())
+                    return false;
+                // Use standard string to unsigned long long utility
+                subIds.push_back(std::stoull(token));
+            }
+            if (subIds.size() < 2)
+            {
+                std::cerr << "Sub ids require more than 1 value" << std::endl;
+                return false;
+            }
+        }
+
     private:
         std::vector<uint8_t> buf_;
     };
@@ -264,19 +292,19 @@ bool parseSnmpPacket(const uint8_t *data, size_t len, SnmpMessage &outMsg)
     size_t seqLen = 0;
     if (!reader.expectTag(Asn1Tag::Sequence) || !reader.readLength(seqLen))
     {
-        std::cout << "Failed to read outer message sequence" << std::endl;
+        std::cerr << "Failed to read outer message sequence" << std::endl;
         return false;
     }
 
     // 2. Version and Community String
     if (!reader.readInteger(outMsg.version))
     {
-        std::cout << "Failed to read version" << std::endl;
+        std::cerr << "Failed to read version" << std::endl;
         return false;
     }
     if (!reader.readOctetString(outMsg.community))
     {
-        std::cout << "Failed to read community string" << std::endl;
+        std::cerr << "Failed to read community string" << std::endl;
         return false;
     }
 
@@ -284,24 +312,24 @@ bool parseSnmpPacket(const uint8_t *data, size_t len, SnmpMessage &outMsg)
     size_t pduLen = 0;
     if (!reader.readTag(outMsg.pduType) || !reader.readLength(pduLen))
     {
-        std::cout << "Failed to read pdu header" << std::endl;
+        std::cerr << "Failed to read pdu header" << std::endl;
         return false;
     }
 
     // 4. Request ID, Error Status, Error Index
     if (!reader.readInteger(outMsg.requestId))
     {
-        std::cout << "Failed to read request id" << std::endl;
+        std::cerr << "Failed to read request id" << std::endl;
         return false;
     }
     if (!reader.readInteger(outMsg.errorStatus))
     {
-        std::cout << "Failed to read error status" << std::endl;
+        std::cerr << "Failed to read error status" << std::endl;
         return false;
     }
     if (!reader.readInteger(outMsg.errorIndex))
     {
-        std::cout << "Failed to read error index" << std::endl;
+        std::cerr << "Failed to read error index" << std::endl;
         return false;
     }
 
@@ -309,7 +337,7 @@ bool parseSnmpPacket(const uint8_t *data, size_t len, SnmpMessage &outMsg)
     size_t varBindListLen = 0;
     if (!reader.expectTag(Asn1Tag::Sequence) || !reader.readLength(varBindListLen))
     {
-        std::cout << "Failed to read var bind length" << std::endl;
+        std::cerr << "Failed to read var bind length" << std::endl;
         return false;
     }
 
@@ -320,14 +348,14 @@ bool parseSnmpPacket(const uint8_t *data, size_t len, SnmpMessage &outMsg)
         size_t vbLen = 0;
         if (!vbListReader.expectTag(Asn1Tag::Sequence) || !vbListReader.readLength(vbLen))
         {
-            std::cout << "Failed to read var bind list" << std::endl;
+            std::cerr << "Failed to read var bind list" << std::endl;
             return false;
         }
 
         std::string oid;
         if (!vbListReader.readOid(oid))
         {
-            std::cout << "Failed to read oid" << std::endl;
+            std::cerr << "Failed to read oid" << std::endl;
             return false;
         }
         outMsg.oids.push_back(oid);
@@ -338,13 +366,13 @@ bool parseSnmpPacket(const uint8_t *data, size_t len, SnmpMessage &outMsg)
 
         if (!vbListReader.readTag(valTag) || !vbListReader.readLength(valLen))
         {
-            std::cout << "Failed to read tag and length for skip value" << std::endl;
+            std::cerr << "Failed to read tag and length for skip value" << std::endl;
             return false;
         }
         if (valLen > 0 && !vbListReader.skipValue(valLen))
         {
             // Skip NULL value instead of reading for GetRequest
-            std::cout << "Failed to skip Null message" << std::endl;
+            std::cerr << "Failed to skip Null message" << std::endl;
             return false;
         }
     }
