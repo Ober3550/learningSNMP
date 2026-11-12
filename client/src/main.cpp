@@ -79,13 +79,40 @@ int main()
 
         if (parseSnmpPacket(rawBytes, static_cast<size_t>(bytes_received), msg))
         {
-            std::cout << "  SNMP v" << (msg.version + 1)
-                      << " | Community: " << msg.community
-                      << " | PDU: 0x" << std::hex << static_cast<int>(msg.pduType) << std::dec
-                      << " | ReqID: " << msg.requestId << "\n";
-            for (const auto &oid : msg.oids)
+            if (msg.pduType == static_cast<uint8_t>(SnmpPduType::GetRequest) && !msg.oids.empty())
             {
-                std::cout << "  Requested OID: " << oid << "\n";
+                std::vector<SnmpVarBind> replyBinds;
+
+                for (const auto &oid : msg.oids)
+                {
+                    if (oid == "1.3.6.1.2.1.1.1.0")
+                    {
+                        replyBinds.push_back({oid, "Custom C++ Clang SNMP Agent"});
+                    }
+                    else
+                    {
+                        replyBinds.push_back({oid, "Unknown OID"});
+                    }
+                }
+
+                std::vector<uint8_t> responseBytes = buildSnmpGetResponse(msg, replyBinds);
+
+                ssize_t sent = sendto(
+                    sockfd,
+                    responseBytes.data(),
+                    responseBytes.size(),
+                    0,
+                    reinterpret_cast<sockaddr *>(&client_addr),
+                    client_len);
+
+                if (sent < 0)
+                {
+                    std::perror("sendto failed");
+                }
+                else
+                {
+                    std::cout << "  Sent " << sent << " byte GetResponse!\n";
+                }
             }
         }
         else

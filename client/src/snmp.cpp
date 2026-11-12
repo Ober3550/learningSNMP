@@ -312,6 +312,8 @@ namespace
             return true;
         }
 
+        const std::vector<uint8_t> &data() const { return buf_; }
+
     private:
         std::vector<uint8_t> buf_;
     };
@@ -413,8 +415,34 @@ bool parseSnmpPacket(const uint8_t *data, size_t len, SnmpMessage &outMsg)
     return true;
 }
 
-std::vector<uint8_t> buildSnpmGetResponse(const SnmpMessage &request, const std::vector<SnmpVarBind> &varBinds, SnmpErrorStatus errorStatus, int64_t errorIndex)
+std::vector<uint8_t> buildSnmpGetResponse(const SnmpMessage &request, const std::vector<SnmpVarBind> &varBinds, SnmpErrorStatus errorStatus, int64_t errorIndex)
 {
+    // 1. Build VarBindList
+    BerWriter vbListWriter;
+    for (const auto &vb : varBinds)
+    {
+        BerWriter vbWriter;
+        vbWriter.writeOid(vb.oid);
+        vbWriter.writeOctetString(vb.value);
+        vbListWriter.writeTLV(Asn1Tag::Sequence, vbWriter.data());
+    }
+
+    // 2. Build GetResponse PDU
+    BerWriter pduWriter;
+    pduWriter.writeInteger(request.requestId);
+    pduWriter.writeInteger(static_cast<int64_t>(errorStatus));
+    pduWriter.writeInteger(errorIndex);
+    pduWriter.writeTLV(Asn1Tag::Sequence, vbListWriter.data());
+
+    // 3. Build Outer SNMP Message Sequence
+    BerWriter msgWriter;
+    msgWriter.writeInteger(request.version);
+    msgWriter.writeOctetString(request.community);
+    msgWriter.writeTLV(static_cast<uint8_t>(SnmpPduType::GetResponse), pduWriter.data());
+
+    BerWriter packetWriter;
+    packetWriter.writeTLV(Asn1Tag::Sequence, msgWriter.data());
+    return packetWriter.data();
 }
 
 // Helper function to print raw bytes as Hex and safe ASCII
