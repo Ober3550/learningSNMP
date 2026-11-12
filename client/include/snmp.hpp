@@ -25,6 +25,17 @@ enum class SnmpPduType : uint8_t
     Trap = 0xA4
 };
 
+// SNMP Error Status Codes
+enum class SnmpErrorStatus : int64_t
+{
+    NoError = 0,
+    TooBig = 1,
+    NoSuchName = 2,
+    BadValue = 3,
+    ReadOnly = 4,
+    GenErr = 5
+};
+
 struct SnmpMessage
 {
     int64_t version = -1;
@@ -36,6 +47,19 @@ struct SnmpMessage
     std::vector<std::string> oids;
 };
 
+struct SnmpVarBind
+{
+    std::string oid;
+    std::string value; // OctetString response value
+};
+
 // Parses a raw SNMPv1/v2c UDP payload. Returns true on valid structure.
 bool parseSnmpPacket(const uint8_t *data, size_t len, SnmpMessage &outMsg);
 void printPayload(const char *data, ssize_t length);
+
+// Encodes an SNMPv1/v2c GetResponse packet into raw bytes
+std::vector<uint8_t> buildSnmpGetResponse(
+    const SnmpMessage &request,
+    const std::vector<SnmpVarBind> &varBinds,
+    SnmpErrorStatus errorStatus = SnmpErrorStatus::NoError,
+    int64_t errorIndex = 0);
