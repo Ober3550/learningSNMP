@@ -120,6 +120,8 @@ namespace
             uint8_t firstByte = data_[pos_++];
 
             // First byte encodes first two sub-identifieers: (40 * A) + B
+            // 0 <= A <= 2
+            // 0 <= B <= 39
             oss << (firstByte / 40) << "." << (firstByte % 40);
 
             // Remaining sub-identifiers use Base-128 VLQ encoding
@@ -277,6 +279,37 @@ namespace
                 std::cerr << "Sub ids require more than 1 value" << std::endl;
                 return false;
             }
+
+            std::vector<uint8_t> encoded;
+            // First two ids combine into one byte (40 * A) + B
+            // 0 <= A <= 2
+            // 0 <= B <= 39
+            encoded.push_back(static_cast<uint8_t>(40 * subIds[0] + subIds[1]));
+
+            for (size_t i = 2; i < subIds.size(); ++i)
+            {
+                uint64_t val = subIds[i];
+                std::vector<uint8_t> vlq;
+
+                // When we read the subIds we read last byte first
+                // When we push here now the top bit being zero means that the value is complete
+                vlq.push_back(static_cast<uint8_t>(val & 0x7F));
+                val >>= 7;
+
+                while (val > 0)
+                {
+                    // The top bit being set means that there's a continuation toward the last byte we already pushed
+                    // This loop is consuming the value in reverse order
+                    vlq.push_back(static_cast<uint8_t>((val & 0x7F) | 0x80));
+                    val >>= 7;
+                }
+
+                std::reverse(vlq.begin(), vlq.end());
+                encoded.insert(encoded.end(), vlq.begin(), vlq.end());
+            }
+
+            writeTLV(Asn1Tag::ObjectIdentifier, encoded);
+            return true;
         }
 
     private:
@@ -378,6 +411,10 @@ bool parseSnmpPacket(const uint8_t *data, size_t len, SnmpMessage &outMsg)
     }
 
     return true;
+}
+
+std::vector<uint8_t> buildSnpmGetResponse(const SnmpMessage &request, const std::vector<SnmpVarBind> &varBinds, SnmpErrorStatus errorStatus, int64_t errorIndex)
+{
 }
 
 // Helper function to print raw bytes as Hex and safe ASCII
