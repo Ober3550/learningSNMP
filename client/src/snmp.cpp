@@ -159,6 +159,101 @@ namespace
         size_t len_;
         size_t pos_;
     };
+
+    class BerWriter
+    {
+    public:
+        void writeByte(uint8_t b)
+        {
+            buf_.push_back(b);
+        }
+
+        void writeBytes(const uint8_t *data, size_t len)
+        {
+            // Insert bytes into buffer from start ptr to end ptr
+            buf_.insert(buf_.end(), data, data + len);
+        }
+
+        void writeBytes(const std::vector<uint8_t> &other)
+        {
+            // Insert bytes from another vector
+            buf_.insert(buf_.end(), other.begin(), other.end());
+        }
+
+        // Encodes ASN.1 BER definite length (short form < 128, long form >= 128)
+        void writeLength(size_t len)
+        {
+            if (len < 0b1000'0000)
+            {
+                writeByte(static_cast<uint8_t>(len));
+                return;
+            }
+
+            std::vector<uint8_t> lenBytes;
+            while (len > 0)
+            {
+                lenBytes.push_back(static_cast<uint8_t>(len & 0xFF));
+                len >>= 8;
+            }
+
+            // Reverse order of bytes for reading
+            // Write the first byte that specifies how many bytes make up the length
+            std::reverse(lenBytes.begin(), lenBytes.end());
+            writeByte(static_cast<uint8_t>(0x80 & lenBytes.size()));
+            writeBytes(lenBytes);
+        }
+
+        // Wraps a pre-encoded payload with a Tag and Length
+        void writeTLV(uint8_t tag, const std::vector<uint8_t> &payload)
+        {
+            writeByte(tag);
+            writeLength(payload.size());
+            writeBytes(payload);
+        }
+
+        void writeTLV(Asn1Tag tag, const std::vector<uint8_t> &payload)
+        {
+            writeTLV(static_cast<uint8_t>(tag), payload);
+        }
+
+        void writeInteger(int64_t value)
+        {
+            std::vector<uint8_t> bytes;
+            uint64_t uval = static_cast<uint64_t>(value);
+
+            // If the integer is negative when we shift right there'll be many leading 1 bits
+            // If we populate the top of the value with 1 bits when we shift
+            // we can determine if there's no more non-1 bits remaining and encoded a negative integer in less bytes
+            const uint64_t signFill = (value < 0) ? (0xFFULL << 56) : 0ULL;
+
+            // Pull the bytes from the value and populate the buffer
+            do
+            {
+                bytes.push_back(static_cast<uint8_t>(uval & 0xFF));
+                uval = (uval >> 8) | signFill;
+            } while (uval != 0 && uval != static_cast<uint64_t>(-1));
+
+            // bytes is currently stored little-endian (bytes.back() will become the first byte after reverse)
+            // If the value is positive (or zero) but the most significant byte has its top bit set
+            // that would look negative to the decoder, so we push a 0x00 sign-padding byte
+            if (value >= 0 && (bytes.back() & 0x80) != 0)
+            {
+                bytes.push_back(0x00);
+            }
+            // If the value is negative and the most significant byte's top bit is 0
+            // add a 0xFF sign-padding byte so the top bit on the wire is 1
+            else if (value < 0 && (bytes.back() & 0x80) == 0)
+            {
+                bytes.push_back(0xFF);
+            }
+
+            std::reverse(bytes.begin(), bytes.end());
+            writeTLV(Asn1Tag::Integer, bytes);
+        }
+
+    private:
+        std::vector<uint8_t> buf_;
+    };
 }
 
 bool parseSnmpPacket(const uint8_t *data, size_t len, SnmpMessage &outMsg)
