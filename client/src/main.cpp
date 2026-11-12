@@ -8,30 +8,17 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-// Helper function to print raw bytes as Hex and safe ASCII
-void printPayload(const char* data, ssize_t length) {
-    std::cout << "  Hex:   ";
-    for (ssize_t i = 0; i < length; ++i) {
-        std::cout << std::hex << std::setw(2) << std::setfill('0')
-                  << (static_cast<unsigned int>(static_cast<unsigned char>(data[i]))) << " ";
-    }
-    // Reset stream formatting back to decimal
-    std::cout << std::dec << "\n  ASCII: ";
+#include "snmp.hpp"
 
-    for (ssize_t i = 0; i < length; ++i) {
-        unsigned char c = static_cast<unsigned char>(data[i]);
-        std::cout << (std::isprint(c) ? static_cast<char>(c) : '.');
-    }
-    std::cout << std::endl;
-}
-
-int main() {
+int main()
+{
     constexpr uint16_t PORT = 161;
     constexpr size_t BUFFER_SIZE = 4096;
 
     // 1. Create a UDP socket (IPv4, Datagram)
     int sockfd = socket(AF_INET, SOCK_DGRAM, 0);
-    if (sockfd < 0) {
+    if (sockfd < 0)
+    {
         std::perror("Failed to create socket");
         return 1;
     }
@@ -47,7 +34,8 @@ int main() {
     server_addr.sin_port = htons(PORT);       // Convert port to network byte order
 
     // 3. Bind the socket to UDP port 161
-    if (bind(sockfd, reinterpret_cast<sockaddr*>(&server_addr), sizeof(server_addr)) < 0) {
+    if (bind(sockfd, reinterpret_cast<sockaddr *>(&server_addr), sizeof(server_addr)) < 0)
+    {
         std::perror("Bind failed");
         close(sockfd);
         return 1;
@@ -60,17 +48,18 @@ int main() {
     sockaddr_in client_addr{};
     socklen_t client_len = sizeof(client_addr);
 
-    while (true) {
+    while (true)
+    {
         ssize_t bytes_received = recvfrom(
             sockfd,
             buffer.data(),
             buffer.size(),
             0,
-            reinterpret_cast<sockaddr*>(&client_addr),
-            &client_len
-        );
+            reinterpret_cast<sockaddr *>(&client_addr),
+            &client_len);
 
-        if (bytes_received < 0) {
+        if (bytes_received < 0)
+        {
             std::perror("recvfrom error");
             continue;
         }
@@ -82,8 +71,27 @@ int main() {
         std::cout << "Received " << bytes_received << " bytes from "
                   << client_ip << ":" << ntohs(client_addr.sin_port) << std::endl;
 
-        // Display the received bytes
+        // Print Raw Bytes to check end of message
         printPayload(buffer.data(), bytes_received);
+
+        SnmpMessage msg;
+        const auto *rawBytes = reinterpret_cast<const uint8_t *>(buffer.data());
+
+        if (parseSnmpPacket(rawBytes, static_cast<size_t>(bytes_received), msg))
+        {
+            std::cout << "  SNMP v" << (msg.version + 1)
+                      << " | Community: " << msg.community
+                      << " | PDU: 0x" << std::hex << static_cast<int>(msg.pduType) << std::dec
+                      << " | ReqID: " << msg.requestId << "\n";
+            for (const auto &oid : msg.oids)
+            {
+                std::cout << "  Requested OID: " << oid << "\n";
+            }
+        }
+        else
+        {
+            std::cout << "  Packet is not a valid SNMPv1/v2c datagram.\n";
+        }
 
         // Reset client_len before the next recvfrom call
         client_len = sizeof(client_addr);

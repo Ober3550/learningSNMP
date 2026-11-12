@@ -1,5 +1,6 @@
 # Build output directory
-/build/
+/client/build/
+/server/build/
 
 # Compiled binaries and object files (in case of manual builds)
 *.o
