@@ -1,0 +1,22 @@
+# Build output directory
+/build/
+
+# Compiled binaries and object files (in case of manual builds)
+*.o
+*.d
+*.out
+*.exe
+*.app
+*.dSYM/
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+compile_commands.json
+
+# Operating System files
+.DS_Store
+Thumbs.db
